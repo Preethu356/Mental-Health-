@@ -180,7 +180,3 @@ def main():
         
         # Rerun to update the chat
         st.rerun()
-
-if __name__ == "__main__":
-    main()    df_display["timestamp"] = pd.to_datetime(df_display["timestamp"]).dt.strftime("%Y-%m-%d %H:%M:%S")
-    st.dataframe(df_display.sort_values("timestamp", ascending=False))
