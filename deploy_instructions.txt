@@ -1,0 +1,14 @@
+DEPLOY CHECKLIST
+
+1) Create a GitHub repository (e.g., mh-assistant-demo).
+2) Commit all files from this package and push to GitHub.
+3) For Streamlit Community Cloud:
+   - Sign in at https://share.streamlit.io
+   - Click 'New app' -> connect your GitHub -> choose repo and branch -> Deploy.
+   - Add secrets (if you later use APIs) in the app settings.
+4) For Heroku:
+   - Create a Heroku app and connect GitHub or push using git.
+   - Ensure 'Procfile' exists (this package includes one).
+   - Set buildpack to python if required.
+5) Add real crisis hotline numbers for the countries you expect users from.
+6) (Optional) Add an OpenAI key or other API keys as secrets — do NOT hardcode keys in code.
