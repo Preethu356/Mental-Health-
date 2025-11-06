@@ -78,7 +78,7 @@ def initialize_session_state():
 def get_ai_response(messages):
     """Get response from OpenAI API"""
     try:
-        client = openai.OpenAI(api_key=os.getenv("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))
+        client = openai.OpenAI(api_key=os.getenv(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))
         
         response = client.chat.completions.create(
             model=model_config["default_model"],
