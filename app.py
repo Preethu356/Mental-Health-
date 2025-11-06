@@ -1,6 +1,3 @@
-import streamlit as st
-import os
-import toml
 
 # Load configuration
 config = toml.load("config.toml")
