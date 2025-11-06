@@ -1,77 +1,186 @@
 import streamlit as st
-import pandas as pd
-import datetime
-from helpers import get_suggestions, calming_breathing_text
+import openai
+import os
+from dotenv import load_dotenv
+import toml
 
-st.set_page_config(page_title="Mental Health Assistant", page_icon="🧠", layout="centered")
+# Load configuration
+config = toml.load("config.toml")
+app_config = config["app"]
+model_config = config["model"]
+style_config = config["style"]
 
-st.title("🧠 Mental Health Assistant — Streamlit")
-st.write("This non-clinical assistant offers self-help tools, mood tracking, and resources. Not a substitute for professional help.")
+# Load environment variables
+load_dotenv()
 
-# --- Sidebar: user info and mood logging ---
-st.sidebar.header("Mood Tracker")
-name = st.sidebar.text_input("Your name (optional)")
-mood = st.sidebar.selectbox("How are you feeling right now?", ["Very good","Good","Okay","Down","Very down"])
-notes = st.sidebar.text_area("Short notes (what's on your mind?)", "", max_chars=500)
-save = st.sidebar.button("Log mood")
-
-if "mood_logs" not in st.session_state:
-    st.session_state["mood_logs"] = []
-
-if save:
-    entry = {"timestamp": datetime.datetime.now().isoformat(), "name": name, "mood": mood, "notes": notes}
-    st.session_state["mood_logs"].append(entry)
-    st.sidebar.success("Mood saved ✅")
-
-if st.sidebar.button("Download mood logs (CSV)"):
-    if st.session_state["mood_logs"]:
-        df = pd.DataFrame(st.session_state["mood_logs"])
-        csv = df.to_csv(index=False).encode('utf-8')
-        st.sidebar.download_button("Download CSV", data=csv, file_name="mood_logs.csv", mime="text/csv")
-    else:
-        st.sidebar.info("No mood logs yet.")
-
-# --- Main: Chat-like suggestions ---
-st.header("Quick check-in")
-user_input = st.text_area("Talk to the assistant (type how you're feeling / what's happening):", "", max_chars=1000, height=120)
-if st.button("Get supportive suggestions"):
-    if not user_input.strip():
-        st.warning("Please enter something you'd like support with.")
-    else:
-        suggestions = get_suggestions(user_input)
-        st.subheader("Suggestions & self-help actions")
-        for i, s in enumerate(suggestions, 1):
-            st.markdown(f"**{i}.** {s}")
-
-# --- Breathing exercise ---
-st.header("Calming breathing exercise")
-if st.button("Start breathing exercise (1 min)"):
-    st.info("Follow the prompts below. Click the buttons as you breathe.")
-    st.markdown(calming_breathing_text())
-
-# --- Resources & Crisis Notice ---
-st.header("Resources & Safety")
-st.markdown(
-    "Important: This assistant is not a replacement for professional help. "
-    "If you are in immediate danger or having a medical/mental-health emergency, "
-    "please contact local emergency services right away."
-)
-st.markdown(
-    "Crisis resources (examples):\n"
-    "- In India: National Helpline - 9152987821 (or contact local emergency services)\n"
-    "- International: Find local hotlines at organizations such as befrienders.org or your country's health department."
+# Configure page
+st.set_page_config(
+    page_title=app_config["title"],
+    page_icon="🧠",
+    layout="centered"
 )
 
-st.subheader("Further reading")
-st.write("- Grounding: 5-4-3-2-1 sensory technique")
-st.write("- Sleep hygiene, routine, and small daily activities can help mood.")
-st.write("- If symptoms persist or worsen, seek a licensed mental health professional.")
+# Apply custom CSS
+st.markdown(f"""
+<style>
+    .main {{
+        background-color: {style_config["background_color"]};
+    }}
+    .stChatMessage {{
+        padding: 1rem;
+    }}
+    .warning-box {{
+        background-color: #fff3cd;
+        border: 1px solid #ffeaa7;
+        border-radius: 0.5rem;
+        padding: 1rem;
+        margin: 1rem 0;
+    }}
+    .crisis-box {{
+        background-color: #f8d7da;
+        border: 1px solid #f5c6cb;
+        border-radius: 0.5rem;
+        padding: 1rem;
+        margin: 1rem 0;
+    }}
+</style>
+""", unsafe_allow_html=True)
 
-# --- Show mood logs table in main area ---
-if st.session_state["mood_logs"]:
-    st.markdown("---")
-    st.subheader("Your recent mood logs (session only)")
-    df = pd.DataFrame(st.session_state["mood_logs"])
-    df_display = df.copy()
-    df_display["timestamp"] = pd.to_datetime(df_display["timestamp"]).dt.strftime("%Y-%m-%d %H:%M:%S")
+def initialize_session_state():
+    """Initialize session state variables"""
+    if "messages" not in st.session_state:
+        system_prompt = f"""
+        You are a helpful, empathetic mental health information assistant. 
+        
+        YOUR ROLE:
+        - Provide general psychoeducation about mental health topics
+        - Offer supportive, validating responses
+        - Suggest evidence-based coping strategies
+        - Help users understand common mental health concepts
+        
+        CRITICAL SAFETY RULES:
+        - You are NOT a licensed therapist or crisis counselor
+        - You cannot provide diagnoses or treatment plans
+        - If a user mentions self-harm, suicide, or immediate danger, you MUST:
+          1. Acknowledge their pain
+          2. Provide the crisis hotline: {app_config['crisis_hotline']}
+          3. Encourage them to contact emergency services if in immediate danger
+          4. Keep the response brief and focused on safety
+        
+        Always include this disclaimer in your first response: "{app_config['warning_message']}"
+        """
+        
+        st.session_state.messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "assistant", "content": f"Hello! I'm here to provide general mental health information and support. {app_config['warning_message']} How can I help you today?"}
+        ]
+
+def get_ai_response(messages):
+    """Get response from OpenAI API"""
+    try:
+        client = openai.OpenAI(api_key=os.getenv("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))
+        
+        response = client.chat.completions.create(
+            model=model_config["default_model"],
+            messages=messages,
+            max_tokens=model_config["max_tokens"],
+            temperature=model_config["temperature"]
+        )
+        
+        return response.choices[0].message.content
+    except Exception as e:
+        return f"I'm having trouble responding right now. Please try again later. Error: {str(e)}"
+
+def contains_crisis_keywords(text):
+    """Check if user input contains crisis keywords"""
+    crisis_keywords = [
+        'kill myself', 'suicide', 'end it all', 'want to die',
+        'harm myself', 'self harm', 'hurt myself', 'not want to live'
+    ]
+    text_lower = text.lower()
+    return any(keyword in text_lower for keyword in crisis_keywords)
+
+def handle_crisis_response():
+    """Generate crisis response"""
+    return f"""
+    I hear that you're in tremendous pain, and I'm deeply concerned about your safety.
+
+    **Please reach out for immediate help:**
+    - **Crisis Hotline:** {app_config['crisis_hotline']}
+    - **Crisis Text Line:** {app_config['crisis_text']}
+    - **Emergency Services:** 911
+
+    You don't have to go through this alone. There are people who want to help you right now.
+    """
+
+def main():
+    # Initialize session state
+    initialize_session_state()
+    
+    # Sidebar
+    with st.sidebar:
+        st.title("🧠 Safety Info")
+        st.markdown(f"""
+        <div class="crisis-box">
+        <h4>🚨 Immediate Help</h4>
+        <p><strong>National Suicide Prevention Lifeline:</strong> {app_config['crisis_hotline']}</p>
+        <p><strong>Crisis Text Line:</strong> {app_config['crisis_text']}</p>
+        <p><strong>Emergency:</strong> 911</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown(f"""
+        <div class="warning-box">
+        <h4>⚠️ Important</h4>
+        <p>{app_config['warning_message']}</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # API key input (for testing - remove in production)
+        api_key = st.text_input("OpenAI API Key", type="password", 
+                               help="Get your API key from https://platform.openai.com/api-keys")
+        if api_key:
+            os.environ["OPENAI_API_KEY"] = api_key
+        
+        if st.button("Clear Conversation"):
+            st.session_state.messages = [
+                st.session_state.messages[0],
+                {"role": "assistant", "content": "Conversation cleared. How can I help you today?"}
+            ]
+            st.rerun()
+    
+    # Main chat interface
+    st.title(app_config["title"])
+    st.caption("A safe space for mental health information and support")
+    
+    # Display chat messages
+    for message in st.session_state.messages[1:]:  # Skip system message
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+    
+    # Chat input
+    if prompt := st.chat_input("What's on your mind today?"):
+        # Add user message to chat
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        with st.chat_message("user"):
+            st.markdown(prompt)
+        
+        # Check for crisis keywords
+        if contains_crisis_keywords(prompt):
+            ai_response = handle_crisis_response()
+        else:
+            # Get AI response (only include recent messages to save tokens)
+            recent_messages = st.session_state.messages[-6:]  # Last 3 exchanges
+            ai_response = get_ai_response(recent_messages)
+        
+        # Add assistant response to chat
+        st.session_state.messages.append({"role": "assistant", "content": ai_response})
+        with st.chat_message("assistant"):
+            st.markdown(ai_response)
+        
+        # Rerun to update the chat
+        st.rerun()
+
+if __name__ == "__main__":
+    main()    df_display["timestamp"] = pd.to_datetime(df_display["timestamp"]).dt.strftime("%Y-%m-%d %H:%M:%S")
     st.dataframe(df_display.sort_values("timestamp", ascending=False))
